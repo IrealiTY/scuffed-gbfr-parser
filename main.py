@@ -1,6 +1,8 @@
 import customtkinter
 import frida
 from customtkinter import *
+import os
+import csv
 
 session: frida.core.Session
 fun = 0x0
@@ -69,6 +71,14 @@ def read(address):
     script.load()
 
 
+def write_results_to_csv(time_str, damage, dps):
+    file_exists = os.path.isfile('damage.csv')
+    with open('damage.csv', 'a' if file_exists else 'w', newline='') as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            writer.writerow(["Time", "Damage", "DPS"])  # Header row
+        writer.writerow([time_str, damage, dps])
+
 def on_read_msg(message, data):
     rax = int(message["payload"]["rax"], 16)
     if rax == 0:
@@ -95,14 +105,16 @@ def on_read_msg(message, data):
 
 
 def reset(event):
-    global last_timer_mem
-    global time_elapsed
-    global parse_total
+    global last_timer_mem, time_elapsed, parse_total
+    if time_elapsed > 0:  # Ensures we don't write initial state or zeros
+        dps = parse_total // time_elapsed if time_elapsed > 0 else 0
+        # Print statements for diagnosis
+        print(f"Time Elapsed: {time_elapsed}, Damage: {parse_total}, DPS: {dps}")
+        write_results_to_csv(f"{time_elapsed // 60}:{time_elapsed % 60}", parse_total, dps)
     last_timer_mem = 1
     time_elapsed = 0
     parse_total = 0
     update(1)
-
 
 def main():
     global session
@@ -141,18 +153,17 @@ def gui(err=False):
 
 
 def update(r=0):
-    if r:
-        app.label.configure(text=parse_text % (0, "00", 0, 0))
-        return
-
+    global time_elapsed, parse_total
     seconds = time_elapsed % 60 if time_elapsed % 60 > 9 else "0%s" % (time_elapsed % 60)
     damage = parse_total
-    dps = parse_total // time_elapsed if int(seconds) > 0 else damage
+    dps = parse_total // time_elapsed if time_elapsed > 0 else 0
     app.label.configure(text=parse_text % (
         time_elapsed // 60,
         seconds,
         f"{damage:,}",
         f"{dps:,}"))
+    if r: 
+        pass
 
 
 if __name__ == '__main__':
